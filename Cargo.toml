@@ -1,0 +1,14 @@
+[package]
+name = "scanner"
+version = "0.1.0"
+edition = "2024"
+authors = ["Jordi Íñigo Griera"]
+license = "BSD-3-Clause"
+description = "A scanner and tokenizer for UTF-8-encoded text, compatible with Lisp syntax"
+repository = "https://github.com/jig/scanner-rust"
+keywords = ["lexer", "scanner", "tokenizer", "lisp", "parser"]
+categories = ["parsing", "text-processing"]
+
+[dependencies]
+
+[dev-dependencies]
