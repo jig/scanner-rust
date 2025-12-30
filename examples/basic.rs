@@ -1,5 +1,4 @@
 use scanner::{Scanner, token_string, EOF};
-use std::io::Cursor;
 
 fn main() {
     // Example 1: Basic scanning
@@ -9,7 +8,7 @@ fn main() {
 (def a '(list 10 3.14 -30 \"hello\" ¬hello¬ \"hel\\\"lo\" ¬hel¬¬lo¬ :a))
 ";
 
-    let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+    let mut s = Scanner::init(src.as_bytes());
     s.position.filename = "example".to_string();
 
     loop {
@@ -30,7 +29,7 @@ fn main() {
 		(list form acc))))
 	";
 
-    let mut s2 = Scanner::init(Cursor::new(src2.as_bytes().to_vec()));
+    let mut s2 = Scanner::init(src2.as_bytes());
     s2.position.filename = "actual-code".to_string();
 
     loop {

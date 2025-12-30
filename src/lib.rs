@@ -7,7 +7,7 @@
 //! # Scanner
 //!
 //! A scanner and tokenizer for UTF-8-encoded text.
-//! It takes a reader providing the source, which then can be tokenized
+//! It takes a byte slice providing the source, which then can be tokenized
 //! through repeated calls to the `scan()` function. For compatibility with
 //! existing tools, the NUL character is not allowed. If the first character
 //! in the source is a UTF-8 encoded byte order mark (BOM), it is discarded.
@@ -18,8 +18,16 @@
 //! those literals and to recognize different identifier and white
 //! space characters.
 
-use std::fmt;
-use std::io::Read;
+#![no_std]
+
+extern crate alloc;
+
+use core::fmt;
+use core::str;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use alloc::boxed::Box;
+use alloc::format;
 
 const BUF_LEN: usize = 1024; // at least 4 (utf8 max bytes)
 
@@ -47,7 +55,7 @@ impl fmt::Display for Position {
         } else {
             self.filename.clone()
         };
-        
+
         if self.is_valid() {
             write!(f, "{}:{}:{}", s, self.line, self.column)
         } else {
@@ -107,10 +115,11 @@ pub fn token_string(tok: Token) -> String {
     }
 }
 
-/// A Scanner implements reading of Unicode characters and tokens from a reader.
-pub struct Scanner<R: Read> {
+/// A Scanner implements reading of Unicode characters and tokens from a byte slice.
+pub struct Scanner<'a> {
     // Input
-    src: R,
+    src: &'a [u8],
+    src_read_pos: usize,
 
     // Source buffer
     src_buf: [u8; BUF_LEN + 1],
@@ -134,7 +143,7 @@ pub struct Scanner<R: Read> {
 
     // Error handling
     error_count: usize,
-    
+
     // Configuration
     pub mode: u32,
     pub whitespace: u64,
@@ -144,11 +153,12 @@ pub struct Scanner<R: Read> {
     pub position: Position,
 }
 
-impl<R: Read> Scanner<R> {
+impl<'a> Scanner<'a> {
     /// Initializes a Scanner with a new source and returns it.
-    pub fn init(src: R) -> Self {
+    pub fn init(src: &'a [u8]) -> Self {
         let mut scanner = Scanner {
             src,
+            src_read_pos: 0,
             src_buf: [0; BUF_LEN + 1],
             src_pos: 0,
             src_end: 0,
@@ -172,7 +182,7 @@ impl<R: Read> Scanner<R> {
                 column: 0,
             },
         };
-        
+
         // Set sentinel
         scanner.src_buf[0] = 128; // utf8.RuneSelf equivalent
         scanner
@@ -201,11 +211,11 @@ impl<R: Read> Scanner<R> {
         self.error_count
     }
 
-    fn error(&mut self, msg: &str) {
+    fn error(&mut self, _msg: &str) {
         self.tok_end = self.src_pos.saturating_sub(self.last_char_len);
         self.error_count += 1;
-        // In production, you might want to call an error callback here
-        eprintln!("Scanner error: {}", msg);
+        // In no_std environment, we can't use eprintln
+        // The error is tracked in error_count
     }
 
     fn char_to_token(&self, ch: char) -> Token {
@@ -253,11 +263,11 @@ impl<R: Read> Scanner<R> {
                 if remaining >= 4 {
                     break;
                 }
-                
+
                 // Check if we have a complete UTF-8 sequence
                 if remaining > 0 {
                     let bytes = &self.src_buf[self.src_pos..self.src_end];
-                    if let Ok(s) = std::str::from_utf8(bytes) {
+                    if let Ok(s) = str::from_utf8(bytes) {
                         if !s.is_empty() {
                             break;
                         }
@@ -274,28 +284,31 @@ impl<R: Read> Scanner<R> {
                 self.src_buf.copy_within(self.src_pos..self.src_end, 0);
                 self.src_buf_offset += self.src_pos;
 
-                // Read more bytes
+                // Read more bytes from source slice
                 let i = self.src_end - self.src_pos;
-                match self.src.read(&mut self.src_buf[i..BUF_LEN]) {
-                    Ok(0) | Err(_) => {
-                        self.src_pos = 0;
-                        self.src_end = i;
-                        self.src_buf[self.src_end] = 128;
-                        
-                        if self.src_end == 0 {
-                            if self.last_char_len > 0 {
-                                self.column += 1;
-                            }
-                            self.last_char_len = 0;
-                            return '\u{FFFF}'; // EOF marker
+                let bytes_to_read = BUF_LEN - i;
+                let available = self.src.len() - self.src_read_pos;
+                let n = if available < bytes_to_read { available } else { bytes_to_read };
+
+                if n == 0 {
+                    self.src_pos = 0;
+                    self.src_end = i;
+                    self.src_buf[self.src_end] = 128;
+
+                    if self.src_end == 0 {
+                        if self.last_char_len > 0 {
+                            self.column += 1;
                         }
-                        break;
+                        self.last_char_len = 0;
+                        return '\u{FFFF}'; // EOF marker
                     }
-                    Ok(n) => {
-                        self.src_pos = 0;
-                        self.src_end = i + n;
-                        self.src_buf[self.src_end] = 128;
-                    }
+                    break;
+                } else {
+                    self.src_buf[i..i+n].copy_from_slice(&self.src[self.src_read_pos..self.src_read_pos+n]);
+                    self.src_read_pos += n;
+                    self.src_pos = 0;
+                    self.src_end = i + n;
+                    self.src_buf[self.src_end] = 128;
                 }
             }
 
@@ -303,7 +316,7 @@ impl<R: Read> Scanner<R> {
             ch = self.src_buf[self.src_pos] as u32;
             if ch >= 128 {
                 let bytes = &self.src_buf[self.src_pos..self.src_end];
-                if let Ok(s) = std::str::from_utf8(bytes) {
+                if let Ok(s) = str::from_utf8(bytes) {
                     if let Some(decoded_ch) = s.chars().next() {
                         ch = decoded_ch as u32;
                         width = decoded_ch.len_utf8();
@@ -568,7 +581,7 @@ impl<R: Read> Scanner<R> {
         while i < bytes.len() {
             let p = d;
             d = bytes[i] as char;
-            
+
             if d == '_' {
                 if p != '0' {
                     return Some(i);
@@ -613,7 +626,7 @@ impl<R: Read> Scanner<R> {
 
     fn scan_escape(&mut self, quote: char) -> char {
         let mut ch = self.next();
-        
+
         match ch {
             'a' | 'b' | 'f' | 'n' | 'r' | 't' | 'v' | '\\' => {
                 if ch == quote {
@@ -699,7 +712,7 @@ impl<R: Read> Scanner<R> {
         if ch == EOF {
             return EOF;
         }
-        
+
         let mut ch_char = char::from_u32(ch as u32).unwrap_or('\u{FFFF}');
         if ch_char == '\u{FFFF}' {
             return EOF;

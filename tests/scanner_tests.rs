@@ -7,7 +7,6 @@
 #[cfg(test)]
 mod tests {
     use scanner::*;
-    use std::io::Cursor;
 
     struct TestToken {
         tok: Token,
@@ -194,7 +193,7 @@ mod tests {
             .join("")
     }
 
-    fn check_tok(s: &Scanner<Cursor<Vec<u8>>>, line: usize, got: Token, want: Token, text: &str) {
+    fn check_tok(s: &Scanner, line: usize, got: Token, want: Token, text: &str) {
         assert_eq!(got, want, "tok = {}, want {} for {:?}", token_string(got), token_string(want), text);
         println!("line = {}, want {} for {:?}", s.position.line, line, text);
         assert_eq!(s.position.line, line, "line = {}, want {} for {:?}", s.position.line, line, text);
@@ -206,7 +205,7 @@ mod tests {
     fn test_scan() {
         let token_list = make_token_list();
         let source = make_source(" \t%s\n", &token_list);
-        let mut s = Scanner::init(Cursor::new(source.as_bytes().to_vec()));
+        let mut s = Scanner::init(source.as_bytes());
         s.set_mode(LISP_TOKENS);
 
         let mut tok = s.scan();
@@ -219,14 +218,14 @@ mod tests {
             }
             line += k.text.matches('\n').count() + 1;
         }
-        // TODO(jig): review why this check fails:
+        // TODO(jig): review why this check fails here and not in the Go version:
         // check_tok(&s, line, tok, EOF, "");
     }
 
     #[test]
     fn test_simple_scan() {
         let src = "(def a 10)";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
 
         assert_eq!(s.scan(), '(' as i32);
         assert_eq!(s.token_text(), "(");
@@ -249,7 +248,7 @@ mod tests {
     #[test]
     fn test_negative_numbers() {
         let src = "(- -1 -1)";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
 
         assert_eq!(s.scan(), '(' as i32);
         assert_eq!(s.token_text(), "(");
@@ -270,7 +269,7 @@ mod tests {
     #[test]
     fn test_keywords() {
         let src = ":a :hello-world :*?";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
 
         assert_eq!(s.scan(), KEYWORD);
         assert_eq!(s.token_text(), ":a");
@@ -287,7 +286,7 @@ mod tests {
     #[test]
     fn test_strings() {
         let src = r#""hello" "world" "hel\"lo""#;
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
 
         assert_eq!(s.scan(), STRING);
         assert_eq!(s.token_text(), r#""hello""#);
@@ -304,7 +303,7 @@ mod tests {
     #[test]
     fn test_raw_strings() {
         let src = "¬hello¬ ¬hel¬¬lo¬";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
 
         assert_eq!(s.scan(), RAW_STRING);
         assert_eq!(s.token_text(), "¬hello¬");
@@ -318,7 +317,7 @@ mod tests {
     #[test]
     fn test_comments() {
         let src = "; This is a comment\n(def a 10) ;; another comment";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
         s.set_mode(LISP_TOKENS);
 
         // Comments should be skipped by default
@@ -330,7 +329,7 @@ mod tests {
     #[test]
     fn test_floats() {
         let src = "3.14 0.5 .5 5. 1e10 1.5e-3";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
 
         assert_eq!(s.scan(), FLOAT);
         assert_eq!(s.token_text(), "3.14");
@@ -356,7 +355,7 @@ mod tests {
     #[test]
     fn test_hex_numbers() {
         let src = "0x0 0x1 0xf 0x42 0x123456789abcDEF";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
 
         assert_eq!(s.scan(), INT);
         assert_eq!(s.token_text(), "0x0");
@@ -379,7 +378,7 @@ mod tests {
     #[test]
     fn test_special_identifiers() {
         let src = "~@ #{ - -minus hello-world";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
 
         assert_eq!(s.scan(), IDENT);
         assert_eq!(s.token_text(), "~@");
@@ -402,7 +401,7 @@ mod tests {
     #[test]
     fn test_position() {
         let src = "abc\n本語\n\nx";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
         s.set_mode(0);
         s.set_whitespace(0);
 
@@ -430,7 +429,7 @@ mod tests {
     #[test]
     fn test_bom() {
         let src = "\u{FEFF}hello";
-        let mut s = Scanner::init(Cursor::new(src.as_bytes().to_vec()));
+        let mut s = Scanner::init(src.as_bytes());
 
         assert_eq!(s.scan(), IDENT);
         assert_eq!(s.token_text(), "hello");
