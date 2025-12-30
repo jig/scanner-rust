@@ -32,7 +32,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-scanner = "0.1.0"
+scanner = "0.1.1"
 ```
 
 ### Basic Example
